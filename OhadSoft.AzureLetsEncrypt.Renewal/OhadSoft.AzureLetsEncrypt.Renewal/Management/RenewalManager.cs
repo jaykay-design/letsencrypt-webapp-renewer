@@ -21,7 +21,7 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
 
         private static readonly RNGCryptoServiceProvider s_randomGenerator = new RNGCryptoServiceProvider(); // thread-safe
 
-        public Task Renew(RenewalParameters renewalParams)
+        public Task<int> Renew(RenewalParameters renewalParams)
         {
             if (renewalParams == null)
             {
@@ -31,7 +31,7 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
             return RenewCore(renewalParams);
         }
 
-        private static async Task RenewCore(RenewalParameters renewalParams)
+        private static async Task<int> RenewCore(RenewalParameters renewalParams)
         {
             Trace.TraceInformation("Generating SSL certificate with parameters: {0}", renewalParams);
 
@@ -75,16 +75,24 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
                 new CertificateServiceSettings { UseIPBasedSSL = renewalParams.UseIpBasedSsl },
                 new AuthProviderConfig());
 
+            int certificatesRenewed = 0;
             if (await HasCertificate(azureEnvironment) && renewalParams.RenewXNumberOfDaysBeforeExpiration > 0)
             {
-                await manager.RenewCertificate(false, renewalParams.RenewXNumberOfDaysBeforeExpiration);
+                var result = await manager.RenewCertificate(false, renewalParams.RenewXNumberOfDaysBeforeExpiration);
+                certificatesRenewed = result.Count;
             }
             else
             {
-                await manager.AddCertificate();
+                var result = await manager.AddCertificate();
+                if (result != null)
+                {
+                    certificatesRenewed = 1;
+                }
             }
 
             Trace.TraceInformation("SSL cert added successfully to '{0}'", renewalParams.WebApp);
+
+            return certificatesRenewed;
         }
 
         private static async Task<bool> HasCertificate(AzureWebAppEnvironment azureEnvironment)

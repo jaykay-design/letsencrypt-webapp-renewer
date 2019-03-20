@@ -31,8 +31,11 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.WebJob.AppSettings
                 Events.RenewalInProgress(renewalParams);
                 try
                 {
-                    await m_renewalManager.Renew(renewalParams);
-                    await m_notifier.NotifyAsync(renewalParams);
+                    var certificatesRenewed = await m_renewalManager.Renew(renewalParams);
+                    if (certificatesRenewed != 0)
+                    {
+                        await m_notifier.NotifyAsync(renewalParams);
+                    }
                 }
                 catch (Exception e) when (!ExceptionHelper.IsCriticalException(e))
                 {
