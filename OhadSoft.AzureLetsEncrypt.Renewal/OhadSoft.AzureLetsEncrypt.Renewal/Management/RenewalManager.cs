@@ -5,7 +5,9 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using LetsEncrypt.Azure.Core;
 using LetsEncrypt.Azure.Core.Models;
+using Microsoft.Azure.Management.WebSites;
 using OhadSoft.AzureLetsEncrypt.Renewal.Configuration;
+using OhadSoft.AzureLetsEncrypt.Renewal.Exceptions;
 
 namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
 {
@@ -20,6 +22,8 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
 #pragma warning restore S1075 // URIs should not be hardcoded
 
         private static readonly RNGCryptoServiceProvider s_randomGenerator = new RNGCryptoServiceProvider(); // thread-safe
+        private AzureWebAppEnvironment azureEnvironment;
+        private WebSiteManagementClient webSiteClient;
 
         public Task<int> Renew(RenewalParameters renewalParams)
         {
@@ -31,7 +35,7 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
             return RenewCore(renewalParams);
         }
 
-        private static async Task<int> RenewCore(RenewalParameters renewalParams)
+        private async Task<int> RenewCore(RenewalParameters renewalParams)
         {
             Trace.TraceInformation("Generating SSL certificate with parameters: {0}", renewalParams);
 
@@ -44,15 +48,15 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
                 renewalParams.WebApp,
                 renewalParams.GroupName == null ? String.Empty : $"[{renewalParams.GroupName}]");
 
-            var azureEnvironment = new AzureWebAppEnvironment(
-                    renewalParams.TenantId,
-                    renewalParams.SubscriptionId,
-                    renewalParams.ClientId,
-                    renewalParams.ClientSecret,
-                    renewalParams.ResourceGroup,
-                    renewalParams.WebApp,
-                    renewalParams.ServicePlanResourceGroup,
-                    renewalParams.SiteSlotName)
+            azureEnvironment = new AzureWebAppEnvironment(
+                                renewalParams.TenantId,
+                                renewalParams.SubscriptionId,
+                                renewalParams.ClientId,
+                                renewalParams.ClientSecret,
+                                renewalParams.ResourceGroup,
+                                renewalParams.WebApp,
+                                renewalParams.ServicePlanResourceGroup,
+                                renewalParams.SiteSlotName)
             {
                 WebRootPath = renewalParams.WebRootPath,
                 AzureWebSitesDefaultDomainName = renewalParams.AzureDefaultWebsiteDomainName ?? DefaultWebsiteDomainName,
@@ -75,18 +79,36 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
                 new CertificateServiceSettings { UseIPBasedSSL = renewalParams.UseIpBasedSsl },
                 new AuthProviderConfig());
 
-            int certificatesRenewed = 0;
-            if (await HasCertificate(azureEnvironment) && renewalParams.RenewXNumberOfDaysBeforeExpiration > 0)
+            var certificatesRenewed = 0;
+
+            using (webSiteClient = await ArmHelper.GetWebSiteManagementClient(azureEnvironment))
             {
-                var result = await manager.RenewCertificate(false, renewalParams.RenewXNumberOfDaysBeforeExpiration);
-                certificatesRenewed = result.Count;
-            }
-            else
-            {
-                var result = await manager.AddCertificate();
-                if (result != null)
+                var isWebAppRunning = IsWebAppRunning();
+
+                if (!isWebAppRunning && !await StartWebApp())
                 {
-                    certificatesRenewed = 1;
+                    string errorMessage = string.Format("Could not start WebApp '{0}' to renew certificate", renewalParams.WebApp);
+                    Trace.TraceError(errorMessage);
+                    throw new WebAppException(renewalParams.WebApp, "Could not start WebApp");
+                }
+
+                if (await HasCertificate() && renewalParams.RenewXNumberOfDaysBeforeExpiration > 0)
+                {
+                    var result = await manager.RenewCertificate(false, renewalParams.RenewXNumberOfDaysBeforeExpiration);
+                    certificatesRenewed = result.Count;
+                }
+                else
+                {
+                    var result = await manager.AddCertificate();
+                    if (result != null)
+                    {
+                        certificatesRenewed = 1;
+                    }
+                }
+
+                if (!isWebAppRunning && !await StopWebApp())
+                {
+                    Trace.TraceWarning("Could not stop WebApp '{0}' after renewing certificate", renewalParams.WebApp);
                 }
             }
 
@@ -95,17 +117,60 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
             return certificatesRenewed;
         }
 
-        private static async Task<bool> HasCertificate(AzureWebAppEnvironment azureEnvironment)
+        private bool IsWebAppRunning()
         {
-            using (var webSiteClient = await ArmHelper.GetWebSiteManagementClient(azureEnvironment))
-            {
-                var certs = await webSiteClient.Certificates.ListByResourceGroupWithHttpMessagesAsync(azureEnvironment.ServicePlanResourceGroupName);
-                var site = webSiteClient.WebApps.GetSiteOrSlot(azureEnvironment.ResourceGroupName, azureEnvironment.WebAppName, azureEnvironment.SiteSlotName);
+            var site = webSiteClient.WebApps.GetSiteOrSlot(azureEnvironment.ResourceGroupName, azureEnvironment.WebAppName, azureEnvironment.SiteSlotName);
+            return site.State == "Running";
+        }
 
-                return certs.Body.Any(s =>
-                    s.Issuer.Contains("Let's Encrypt")
-                    && site.HostNameSslStates.Any(hostNameBindings => hostNameBindings.Thumbprint == s.Thumbprint));
+        private async Task<bool> StopWebApp()
+        {
+            int retries = 60;
+
+            do
+            {
+                await webSiteClient.WebApps.StopAsync(azureEnvironment.ResourceGroupName, azureEnvironment.WebAppName);
+                if (!IsWebAppRunning())
+                {
+                    break;
+                }
+
+                retries--;
+                await Task.Delay(1000);
             }
+            while (retries > 0);
+
+            return retries > 0;
+        }
+
+        private async Task<bool> StartWebApp()
+        {
+            int retries = 60;
+
+            do
+            {
+                await webSiteClient.WebApps.StartAsync(azureEnvironment.ResourceGroupName, azureEnvironment.WebAppName);
+                if (IsWebAppRunning())
+                {
+                    break;
+                }
+
+                retries--;
+                await Task.Delay(1000);
+            }
+            while (retries > 0);
+
+            return retries > 0;
+        }
+
+        private async Task<bool> HasCertificate()
+        {
+            var certs = await webSiteClient.Certificates.ListByResourceGroupWithHttpMessagesAsync(azureEnvironment.ServicePlanResourceGroupName);
+            var site = webSiteClient.WebApps.GetSiteOrSlot(azureEnvironment.ResourceGroupName, azureEnvironment.WebAppName, azureEnvironment.SiteSlotName);
+
+            return certs.Body.Any(s =>
+                s.Issuer.Contains("Let's Encrypt")
+                && site.HostNameSslStates.Any(hostNameBindings => hostNameBindings.Thumbprint == s.Thumbprint));
         }
     }
 }

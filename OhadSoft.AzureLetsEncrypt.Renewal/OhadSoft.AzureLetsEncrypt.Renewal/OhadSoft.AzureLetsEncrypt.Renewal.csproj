@@ -81,6 +81,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Configuration\AuthProviderConfig.cs" />
+    <Compile Include="Exceptions\WebAppException.cs" />
     <Compile Include="Management\SharedRenewalParameters.cs" />
     <Compile Include="Management\IRenewalManager.cs" />
     <Compile Include="Management\RenewalParameters.cs" />
