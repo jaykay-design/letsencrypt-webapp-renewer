@@ -44,7 +44,7 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
             int rsaKeyLength = 2048,
             Uri acmeBaseUri = null,
             string webRootPath = null,
-            int renewXNumberOfDaysBeforeExpiration = -1,
+            int renewXNumberOfDaysBeforeExpiration = 22,
             Uri authenticationUri = null,
             Uri azureTokenAudience = null,
             Uri azureManagementEndpoint = null,

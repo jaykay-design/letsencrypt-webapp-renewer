@@ -92,7 +92,7 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
                     throw new WebAppException(renewalParams.WebApp, "Could not start WebApp");
                 }
 
-                if (await HasCertificate() && renewalParams.RenewXNumberOfDaysBeforeExpiration > 0)
+                if (await HasCertificate())
                 {
                     var result = await manager.RenewCertificate(false, renewalParams.RenewXNumberOfDaysBeforeExpiration);
                     certificatesRenewed = result.Count;
