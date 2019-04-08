@@ -120,6 +120,12 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
         private bool IsWebAppRunning()
         {
             var site = webSiteClient.WebApps.GetSiteOrSlot(azureEnvironment.ResourceGroupName, azureEnvironment.WebAppName, azureEnvironment.SiteSlotName);
+
+            if (site == null)
+            {
+                throw new WebAppException(azureEnvironment.WebAppName, "WebApp does not exist.");
+            }
+
             return site.State == "Running";
         }
 
