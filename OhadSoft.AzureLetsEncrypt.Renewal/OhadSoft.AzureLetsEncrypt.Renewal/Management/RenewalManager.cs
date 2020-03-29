@@ -62,7 +62,7 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
                 AzureWebSitesDefaultDomainName = renewalParams.AzureDefaultWebsiteDomainName ?? DefaultWebsiteDomainName,
                 AuthenticationEndpoint = renewalParams.AuthenticationUri ?? new Uri(DefaultAuthenticationUri),
                 ManagementEndpoint = renewalParams.AzureManagementEndpoint ?? new Uri(DefaultManagementEndpoint),
-                TokenAudience = renewalParams.AzureTokenAudience ?? new Uri(DefaultAzureTokenAudienceService)
+                TokenAudience = renewalParams.AzureTokenAudience ?? new Uri(DefaultAzureTokenAudienceService),
             };
 
             var manager = CertificateManager.CreateKuduWebAppCertificateManager(
@@ -74,7 +74,7 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.Management
                     RegistrationEmail = renewalParams.Email,
                     RSAKeyLength = renewalParams.RsaKeyLength,
                     PFXPassword = Convert.ToBase64String(pfxPassData),
-                    BaseUri = (renewalParams.AcmeBaseUri ?? new Uri(DefaultAcmeBaseUri)).ToString()
+                    BaseUri = (renewalParams.AcmeBaseUri ?? new Uri(DefaultAcmeBaseUri)).ToString(),
                 },
                 new CertificateServiceSettings { UseIPBasedSSL = renewalParams.UseIpBasedSsl },
                 new AuthProviderConfig());

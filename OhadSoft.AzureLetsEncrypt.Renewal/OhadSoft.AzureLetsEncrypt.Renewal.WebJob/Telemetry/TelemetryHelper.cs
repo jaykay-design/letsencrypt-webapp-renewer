@@ -42,8 +42,8 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.WebJob.Telemetry
                     "core.cloudapi.de",
                     "core.usgovcloudapi.net",
                     "localhost",
-                    "127.0.0.1"
-                }
+                    "127.0.0.1",
+                },
             });
 #pragma warning restore S1313
 
@@ -98,7 +98,7 @@ namespace OhadSoft.AzureLetsEncrypt.Renewal.WebJob.Telemetry
 
         public static void TrackInternalError(Exception exception)
         {
-            exception = exception ?? new InternalErrorException("internal error tracked with null exception", null);
+            exception ??= new InternalErrorException("internal error tracked with null exception", null);
             try
             {
                 // we're throwing to get a full exception with stack trace in the catch clause below
